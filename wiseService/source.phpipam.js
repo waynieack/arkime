@@ -51,9 +51,9 @@ class PHPIPAMSource extends WISESource {
     this.preloadAddresses = api.getConfig(section, 'preloadAddresses', true) !== false;
     this.addrConcurrency = +api.getConfig(section, 'addrConcurrency', 10);
     this.reloadMins = +api.getConfig(section, 'reload', 60);
-    // Optional override for the right-click search base URL.
+    // Optional override for the right-click search base URL if its different from the default.
     // Default: <phpIPAM base>/tools/search/
-    // e.g. searchUrl=https://arkime.example.com/?tab=ipam&goto=/ipam/tools/search/
+    // e.g. searchUrl=https://externalipam.example.com/ipam/tools/search/
     this.searchUrlOverride = api.getConfig(section, 'searchUrl') || null;
 
     if (!this.url || !this.appId || !this.appCode) {
@@ -63,6 +63,13 @@ class PHPIPAMSource extends WISESource {
 
     // Normalise base URL – strip trailing slash
     this.url = this.url.replace(/\/+$/, '');
+
+    // Create a single shared https.Agent so connections (and their DNS
+    // resolutions) are reused across all API calls instead of each call
+    // opening a fresh socket and triggering a new DNS lookup.
+    this.httpsAgent = this.verifyTLS
+      ? undefined
+      : new (require('https').Agent)({ rejectUnauthorized: false, keepAlive: true });
 
     // ---- Field definitions -------------------------------------------------
     // Base fields: used by WISE when encoding results. The capture plugin
@@ -185,7 +192,7 @@ class PHPIPAMSource extends WISESource {
         {},
         {
           auth: { username, password },
-          httpsAgent: this.verifyTLS ? undefined : new (require('https').Agent)({ rejectUnauthorized: false })
+          httpsAgent: this.httpsAgent
         }
       );
       if (resp.data?.data?.token) {
@@ -214,7 +221,7 @@ class PHPIPAMSource extends WISESource {
         headers: this.authHeaders(),
         timeout: 10000,
         validateStatus: null,  // handle all status codes ourselves
-        httpsAgent: this.verifyTLS ? undefined : new (require('https').Agent)({ rejectUnauthorized: false })
+        httpsAgent: this.httpsAgent
       });
 
     let resp = await doGet();
@@ -493,7 +500,7 @@ exports.initSource = function (api) {
       { name: 'addrConcurrency', required: false, help: 'Max parallel subnet address-fetch requests during preload. Default 10.' },
       { name: 'reload', required: false, help: 'Minutes between full cache refresh. Default 60.' },
       { name: 'cacheAgeMin', required: false, help: 'Minutes to cache per-IP WISE results. Default 60.' },
-      { name: 'searchUrl', required: false, help: 'Override the base URL for right-click search actions. Default: <phpIPAM base>/tools/search/. Example: https://arkime.example.com/?tab=ipam&goto=/ipam/tools/search/' }
+      { name: 'searchUrl', required: false, help: 'Override the base URL for right-click search actions. Default: <phpIPAM base>/tools/search/. Example: https://externalipam.example.com/ipam/tools/search/' }
     ]
   });
 
